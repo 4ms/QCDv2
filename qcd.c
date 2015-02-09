@@ -2,6 +2,7 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
+//#define DEBUG
 
 /********************
  * GLOBAL VARIABLES *
@@ -73,8 +74,24 @@
 
 #define CLKOUT_pins 0b00001111
 #define CLKOUT_init DDRB |= CLKOUT_pins
-#define CLKOUT_ON(x) PORTB |= (1 << (x))
-#define CLKOUT_OFF(x) PORTB &= ~(1 << (x))
+//#define CLKOUT_ON(x) PORTB |= (1 << (x))
+//#define CLKOUT_OFF(x) PORTB &= ~(1 << (x))
+
+#define CLKOUT_ON(x) clkout_state |= (1<<(x))
+#define CLKOUT_OFF(x) clkout_state &= ~(1 << (x))
+
+#ifndef DEBUG
+	#define CLKOUT_SETSTATE(x) PORTB = (PORTB & 0b11110000) | (x)
+
+	#define DEBUGON
+	#define DEBUGOFF
+#else
+	#define CLKOUT_SETSTATE(x) PORTB = (PORTB & 0b11111000) | (x & 0b111)
+
+	#define DEBUGON PORTB |= 0b1000
+	#define DEBUGOFF PORTB &= ~0b1000
+
+#endif
 
 #define ADC_DDR DDRC
 #define ADC_PORT PORTC
@@ -99,7 +116,8 @@ volatile uint32_t tmr_reset[4]={0,0,0,0};
 volatile uint32_t ping_irq_timestamp[4]={0,0,0,0};
 
 uint8_t clkout_state=0;
-
+uint8_t clkout_update_ctr=0;
+uint8_t enable_clkout=0;
 
 SIGNAL (TIMER0_OVF_vect){
 	tapintmr++;
@@ -129,7 +147,7 @@ SIGNAL (PCINT2_vect){
 		if (PING(i)){
 			if (!(ping_state & (1<<i))){ 	//if jack is read high and it was remembered as being low
 				ping_state |= (1<<i);  	//remember it as being high
-				ping_irq_timestamp[i] = (tmr_ping[i] << 8) | TCNT0;
+				ping_irq_timestamp[i] = (tmr_ping[i] << 0) ;
 				tmr_ping[i]=0;
 			}
 		} else 
@@ -167,14 +185,14 @@ void init_extinterrupt(void){
 uint32_t get_tapintmr(void){
 	uint32_t result;
 	cli();
-	result = (tapintmr << 8) | TCNT0;
+	result = (tapintmr << 0) ;
 	sei();
 	return result;
 }
 uint32_t get_tapouttmr(void){
 	uint32_t result;
 	cli();
-	result = (tapouttmr << 8) | TCNT0;
+	result = (tapouttmr << 0) ;
 	sei();
 	return result;
 }
@@ -190,24 +208,24 @@ void reset_tapintmr(void){
 }
 
 
-uint32_t get_tmr_clkout(uint8_t chan){
+inline uint32_t get_tmr_clkout(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_clkout[chan] << 8) | TCNT0;
+	result = (tmr_clkout[chan] << 0) ;
 	sei();
 	return result;
 }
-uint32_t get_tmr_ping(uint8_t chan){
+inline uint32_t get_tmr_ping(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_ping[chan] << 8) | TCNT0;
+	result = (tmr_ping[chan] << 0) ;
 	sei();
 	return result;
 }
-uint32_t get_tmr_reset(uint8_t chan){
+inline uint32_t get_tmr_reset(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_reset[chan] << 8) | TCNT0;
+	result = (tmr_reset[chan] << 0) ;
 	sei();
 	return result;
 }
@@ -266,39 +284,39 @@ void init_adc(void){
 int8_t get_clk_div_nominal(uint8_t adc_val){
 	if (adc_val<=5) 	// /32
 		return(P_1);
-	else if (adc_val<=17) // /16
+	else if (adc_val<=16) // /16
 		return(P_2);
-	else if (adc_val<=33) // /8
+	else if (adc_val<=31) // /8
 		return(P_3);
-	else if (adc_val<=47) // /7
+	else if (adc_val<=45) // /7
 		return(P_4);
-	else if (adc_val<=62) // /6
+	else if (adc_val<=59) // /6
 		return(P_5);
-	else if (adc_val<=76) // /5
+	else if (adc_val<=72) // /5
 		return(P_6);
-	else if (adc_val<=90) // /4
+	else if (adc_val<=86) // /4
 		return(P_7);
-	else if (adc_val<=104) // /3
+	else if (adc_val<=99) // /3
 		return(P_8);
-	else if (adc_val<=118) // /2
+	else if (adc_val<=112) // /2
 		return(P_9);
-	else if (adc_val<=131) // =1
+	else if (adc_val<=125) // =1
 		return(P_10);
-	else if (adc_val<=144) // x2
+	else if (adc_val<=137) // x2
 		return(P_11);	
-	else if (adc_val<=158) // x3
+	else if (adc_val<=151) // x3
 		return(P_12);	
-	else if (adc_val<=172) // x4
+	else if (adc_val<=164) // x4
 		return(P_13);
-	else if (adc_val<=186) // x5
+	else if (adc_val<=177) // x5
 		return(P_14);
-	else if (adc_val<=200) // x6
+	else if (adc_val<=191) // x6
 		return(P_15);
-	else if (adc_val<=215) // x7
+	else if (adc_val<=205) // x7
 		return(P_16);
-	else if (adc_val<=229) // x8
+	else if (adc_val<=218) // x8
 		return(P_17);
-	else if (adc_val<=242) // x12
+	else if (adc_val<=231) // x12
 		return(P_18);
 	else  			// x16
 		return(P_19);
@@ -440,6 +458,8 @@ int main(void){
 	uint8_t cur_adc=0;
 	uint8_t next_adc=0;
 
+	uint8_t ping_updated[4]={0,0,0,0};
+
 
 	/** Initialize **/
 
@@ -460,18 +480,197 @@ int main(void){
 
 	/** Main loop **/
 	while(1){
+
+		//if (enable_clkout){ //every 125us * 4 = 500us
+		//	clkout_update_ctr=0;
+		//	enable_clkout=0;
+		//	CLKOUT_SETSTATE(clkout_state);
+		//}	
+
 		/************ PING **********/
-	
+
+		//cli();
+		if (PING(0) && ping_irq_timestamp[0]){
+			ping_time[0]=ping_irq_timestamp[0];
+			ping_irq_timestamp[0]=0;
+			cli();
+				tmr_reset[0]=0;
+			sei();
+			ping_updated[0]=1;
+			clock_divide_amount[0] = get_clk_div_nominal( divmult_adc[0] );
+
+			divclk_time[0] = get_clk_div_time( clock_divide_amount[0] , ping_time[0] );
+
+			pw_time[0] = calc_pw( pw_adc[0] , divclk_time[0] );
+
+			if (clock_divide_amount[0]<=1){ 	//multiplying 
+				ready_to_reset[0]=1;
+			}
+
+			for (i=0;i<19;i++){
+				num_pings_since_reset[0][i]++;
+				if ( num_pings_since_reset[0][i] >= cda[0][i] ){
+					if ( clock_divide_amount[0] == cda[0][i] ) 
+						ready_to_reset[0] = 1;
+					num_pings_since_reset[0][i] = 0;
+				}
+			}
+
+		} else { //(ping_irq_timestamp)
+			if (!FREERUN && (get_tmr_reset(0) > (ping_time[0]<<1))) {
+				//incoming clock has stopped
+				divclk_time[0]=0;
+				reset_offset_time[0]=0;
+				num_pings_since_reset[0][0]=0;num_pings_since_reset[0][1]=0;
+				num_pings_since_reset[0][2]=0;num_pings_since_reset[0][3]=0;
+				num_pings_since_reset[0][4]=0;num_pings_since_reset[0][5]=0;
+				num_pings_since_reset[0][6]=0;num_pings_since_reset[0][7]=0;
+				num_pings_since_reset[0][8]=0;num_pings_since_reset[0][9]=0;
+				num_pings_since_reset[0][10]=0;num_pings_since_reset[0][11]=0;
+				num_pings_since_reset[0][12]=0;num_pings_since_reset[0][13]=0;
+				num_pings_since_reset[0][14]=0;num_pings_since_reset[0][15]=0;
+				num_pings_since_reset[0][16]=0;num_pings_since_reset[0][17]=0;
+				num_pings_since_reset[0][18]=0;
+			}
+		}
+		if (PING(1) && ping_irq_timestamp[1]){
+			ping_time[1]=ping_irq_timestamp[1];
+			ping_irq_timestamp[1]=0;
+			cli();
+				tmr_reset[1]=0;
+			sei();
+			ping_updated[1]=1;
+			clock_divide_amount[1] = get_clk_div_nominal( divmult_adc[1] );
+
+			divclk_time[1] = get_clk_div_time( clock_divide_amount[1] , ping_time[1] );
+
+			pw_time[1] = calc_pw( pw_adc[1] , divclk_time[1] );
+
+			if (clock_divide_amount[1]<=1){ 	//multiplying 
+				ready_to_reset[1]=1;
+			}
+
+			for (i=0;i<19;i++){
+				num_pings_since_reset[1][i]++;
+				if ( num_pings_since_reset[1][i] >= cda[1][i] ){
+					if ( clock_divide_amount[1] == cda[1][i] ) 
+						ready_to_reset[1] = 1;
+					num_pings_since_reset[1][i] = 0;
+				}
+			}
+
+		} else { //(ping_irq_timestamp)
+			if (!FREERUN && (get_tmr_reset(1) > (ping_time[1]<<1))) {
+				//incoming clock has stopped
+				divclk_time[1]=0;
+				reset_offset_time[1]=0;
+				num_pings_since_reset[1][0]=0;num_pings_since_reset[1][1]=0;
+				num_pings_since_reset[1][2]=0;num_pings_since_reset[1][3]=0;
+				num_pings_since_reset[1][4]=0;num_pings_since_reset[1][5]=0;
+				num_pings_since_reset[1][6]=0;num_pings_since_reset[1][7]=0;
+				num_pings_since_reset[1][8]=0;num_pings_since_reset[1][9]=0;
+				num_pings_since_reset[1][10]=0;num_pings_since_reset[1][11]=0;
+				num_pings_since_reset[1][12]=0;num_pings_since_reset[1][13]=0;
+				num_pings_since_reset[1][14]=0;num_pings_since_reset[1][15]=0;
+				num_pings_since_reset[1][16]=0;num_pings_since_reset[1][17]=0;
+				num_pings_since_reset[1][18]=0;
+			}
+		}
+		if (PING(2) && ping_irq_timestamp[2]){
+			ping_time[2]=ping_irq_timestamp[2];
+			ping_irq_timestamp[2]=0;
+			cli();
+				tmr_reset[2]=0;
+			sei();
+			ping_updated[2]=1;
+			clock_divide_amount[2] = get_clk_div_nominal( divmult_adc[2] );
+
+			divclk_time[2] = get_clk_div_time( clock_divide_amount[2] , ping_time[2] );
+
+			pw_time[2] = calc_pw( pw_adc[2] , divclk_time[2] );
+
+			if (clock_divide_amount[2]<=1){ 	//multiplying 
+				ready_to_reset[2]=1;
+			}
+
+			for (i=0;i<19;i++){
+				num_pings_since_reset[2][i]++;
+				if ( num_pings_since_reset[2][i] >= cda[2][i] ){
+					if ( clock_divide_amount[2] == cda[2][i] ) 
+						ready_to_reset[2] = 1;
+					num_pings_since_reset[2][i] = 0;
+				}
+			}
+
+		} else { //(ping_irq_timestamp)
+			if (!FREERUN && (get_tmr_reset(2) > (ping_time[2]<<1))) {
+				//incoming clock has stopped
+				divclk_time[2]=0;
+				reset_offset_time[2]=0;
+				num_pings_since_reset[2][0]=0;num_pings_since_reset[2][1]=0;
+				num_pings_since_reset[2][2]=0;num_pings_since_reset[2][3]=0;
+				num_pings_since_reset[2][4]=0;num_pings_since_reset[2][5]=0;
+				num_pings_since_reset[2][6]=0;num_pings_since_reset[2][7]=0;
+				num_pings_since_reset[2][8]=0;num_pings_since_reset[2][9]=0;
+				num_pings_since_reset[2][10]=0;num_pings_since_reset[2][11]=0;
+				num_pings_since_reset[2][12]=0;num_pings_since_reset[2][13]=0;
+				num_pings_since_reset[2][14]=0;num_pings_since_reset[2][15]=0;
+				num_pings_since_reset[2][16]=0;num_pings_since_reset[2][17]=0;
+				num_pings_since_reset[2][18]=0;
+			}
+		}
+		if (PING(3) && ping_irq_timestamp[3]){
+			ping_time[3]=ping_irq_timestamp[3];
+			ping_irq_timestamp[3]=0;
+			cli();
+				tmr_reset[3]=0;
+			sei();
+			ping_updated[3]=1;
+			clock_divide_amount[3] = get_clk_div_nominal( divmult_adc[3] );
+
+			divclk_time[3] = get_clk_div_time( clock_divide_amount[3] , ping_time[3] );
+
+			pw_time[3] = calc_pw( pw_adc[3] , divclk_time[3] );
+
+			if (clock_divide_amount[3]<=1){ 	//multiplying 
+				ready_to_reset[3]=1;
+			}
+
+			for (i=0;i<19;i++){
+				num_pings_since_reset[3][i]++;
+				if ( num_pings_since_reset[3][i] >= cda[3][i] ){
+					if ( clock_divide_amount[3] == cda[3][i] ) 
+						ready_to_reset[3] = 1;
+					num_pings_since_reset[3][i] = 0;
+				}
+			}
+
+		} else { //(ping_irq_timestamp)
+			if (!FREERUN && (get_tmr_reset(3) > (ping_time[3]<<1))) {
+				//incoming clock has stopped
+				divclk_time[3]=0;
+				reset_offset_time[3]=0;
+				num_pings_since_reset[3][0]=0;num_pings_since_reset[3][1]=0;
+				num_pings_since_reset[3][2]=0;num_pings_since_reset[3][3]=0;
+				num_pings_since_reset[3][4]=0;num_pings_since_reset[3][5]=0;
+				num_pings_since_reset[3][6]=0;num_pings_since_reset[3][7]=0;
+				num_pings_since_reset[3][8]=0;num_pings_since_reset[3][9]=0;
+				num_pings_since_reset[3][10]=0;num_pings_since_reset[3][11]=0;
+				num_pings_since_reset[3][12]=0;num_pings_since_reset[3][13]=0;
+				num_pings_since_reset[3][14]=0;num_pings_since_reset[3][15]=0;
+				num_pings_since_reset[3][16]=0;num_pings_since_reset[3][17]=0;
+				num_pings_since_reset[3][18]=0;
+			}
+		}
+		//sei();
+
+
+
 		if (++cur_chan>=4) cur_chan=0;
 
-		if (PING(cur_chan) && ping_irq_timestamp[cur_chan]){
-
-			ping_time[cur_chan]=ping_irq_timestamp[cur_chan];
-			ping_irq_timestamp[cur_chan]=0;
-
-			cli();
-				tmr_reset[cur_chan]=0;
-			sei();
+/*
+		if (ping_updated[cur_chan]){
+			ping_updated[cur_chan]=0;
 
 			clock_divide_amount[cur_chan] = get_clk_div_nominal( divmult_adc[cur_chan] );
 
@@ -509,6 +708,7 @@ int main(void){
 				num_pings_since_reset[cur_chan][18]=0;
 			}
 		}
+*/
 
 		/***************** RESET *******************/
 
@@ -546,148 +746,226 @@ int main(void){
 		}
 
 		if (((get_tmr_reset(cur_chan)) >= reset_offset_time[cur_chan]) && ready_to_reset[cur_chan]) {
-				reset_now_flag[cur_chan]=1;
-				ready_to_reset[cur_chan]=0;
+			reset_now_flag[cur_chan]=1;
+			ready_to_reset[cur_chan]=0;
 		}
 
-		/******************* CLK OUT ******************/
-		if (divclk_time[cur_chan]){
+		/******************* CLK OUT *****************16us */
+		//cli();
+		//DEBUGON;	
 
-			if (reset_now_flag[cur_chan]){
-				reset_now_flag[cur_chan]=0;
+		if (divclk_time[0]){
+			if (reset_now_flag[0]){
+				reset_now_flag[0]=0;
 				cli();
-					tmr_clkout[cur_chan]=0;
+					tmr_clkout[0]=0;
 				sei();
-				CLKOUT_ON(cur_chan);
+				CLKOUT_ON(0);
 			}
-
-			now=get_tmr_clkout(cur_chan);
-
-			if (now>=pw_time[cur_chan]){
-				CLKOUT_OFF(cur_chan);
+			now = (tmr_clkout[0] << 0) ;
+			if (now>=pw_time[0]){
+				CLKOUT_OFF(0);
 			}
-			if (now>divclk_time[cur_chan]){
-				t=(now-divclk_time[cur_chan])>>8;
+			if (now>divclk_time[0]){
+				t=(now-divclk_time[0])>>8;
 				cli();
-					tmr_clkout[cur_chan]=t;
+					tmr_clkout[0]=t;
 				sei();
 
-				CLKOUT_ON(cur_chan);
+				CLKOUT_ON(0);
 			}
-
-
 		} else {
-			CLKOUT_OFF(cur_chan);
+			CLKOUT_OFF(0);
+		}
+		if (divclk_time[1]){
+			if (reset_now_flag[1]){
+				reset_now_flag[1]=0;
+				cli();
+					tmr_clkout[1]=0;
+				sei();
+				CLKOUT_ON(1);
+			}
+			now = (tmr_clkout[1] << 0) ;
+			if (now>=pw_time[1]){
+				CLKOUT_OFF(1);
+			}
+			if (now>divclk_time[1]){
+				t=(now-divclk_time[1])>>8;
+				cli();
+					tmr_clkout[1]=t;
+				sei();
+
+				CLKOUT_ON(1);
+			}
+		} else {
+			CLKOUT_OFF(1);
 		}
 
+		if (divclk_time[2]){
+			if (reset_now_flag[2]){
+				reset_now_flag[2]=0;
+				cli();
+					tmr_clkout[2]=0;
+				sei();
+				CLKOUT_ON(2);
+			}
+			now = (tmr_clkout[2] << 0) ;
+			if (now>=pw_time[2]){
+				CLKOUT_OFF(2);
+			}
+			if (now>divclk_time[2]){
+				t=(now-divclk_time[2])>>8;
+				cli();
+					tmr_clkout[2]=t;
+				sei();
 
-		/************ TAP ************/
+				CLKOUT_ON(2);
+			}
+		} else {
+			CLKOUT_OFF(2);
+		}
 
-		if (TAPIN){
-			tapin_down=0;
-			now=get_tapintmr();
+		if (divclk_time[3]){
+			if (reset_now_flag[3]){
+				reset_now_flag[3]=0;
+				cli();
+					tmr_clkout[3]=0;
+				sei();
+				CLKOUT_ON(3);
+			}
+			now = (tmr_clkout[3] << 0) ;
+			if (now>=pw_time[3]){
+				CLKOUT_OFF(3);
+			}
+			if (now>divclk_time[3]){
+				t=(now-divclk_time[3])>>8;
+				cli();
+					tmr_clkout[3]=t;
+				sei();
 
-			if (!(tapin_up)){
-				tapin_up=1;
+				CLKOUT_ON(3);
+			}
+		} else {
+			CLKOUT_OFF(3);
+		}
+		//sei();
 
-				tapout_clk_time=now;
-				reset_tapintmr();
-				reset_tapouttmr();
+		//DEBUGOFF;
 
-				TAPOUT_ON;
-			} else {
-				if (now > HOLDTIMECLEAR){ //button has been down for more than 2 seconds
-					tapout_clk_time=0;
+		CLKOUT_SETSTATE(clkout_state);
+
+	//Only do the global updates after all channels have been processed
+		if (cur_chan==3){
+			//enable_clkout=1;
+
+
+			/************ TAP ************/
+			if (TAPIN){
+				tapin_down=0;
+				now=get_tapintmr();
+
+				if (!(tapin_up)){
+					tapin_up=1;
+
+					tapout_clk_time=now;
+					reset_tapintmr();
 					reset_tapouttmr();
+
+					TAPOUT_ON;
+				} else {
+					if (now > HOLDTIMECLEAR){ //button has been down for more than 2 seconds
+						tapout_clk_time=0;
+						reset_tapouttmr();
+						TAPOUT_OFF;
+	//				} else {
+	//					TAPOUT_ON;
+					}
+				}
+			} else {
+				tapin_up=0;
+				if (!(tapin_down)){
 					TAPOUT_OFF;
-//				} else {
-//					TAPOUT_ON;
+					tapin_down=1;
 				}
 			}
-		} else {
-			tapin_up=0;
-			if (!(tapin_down)){
+
+
+			if (tapout_clk_time){
+
+				now=get_tapouttmr();
+
+				if (now>=(tapout_clk_time>>1)){
+					TAPOUT_OFF;
+				}
+				if (now>tapout_clk_time){
+					t=(now-tapout_clk_time)>>8;
+					cli();
+					tapouttmr=t;
+					sei();
+
+					TAPOUT_ON;
+				}
+
+			} else {
 				TAPOUT_OFF;
-				tapin_down=1;
-			}
-		}
-
-
-		if (tapout_clk_time){
-
-			now=get_tapouttmr();
-
-			if (now>=(tapout_clk_time>>1)){
-				TAPOUT_OFF;
-			}
-			if (now>tapout_clk_time){
-				t=(now-tapout_clk_time)>>8;
-				cli();
-				tapouttmr=t;
-				sei();
-
-				TAPOUT_ON;
 			}
 
-		} else {
-			TAPOUT_OFF;
-		}
 
 
+			/***************** READ ADC ****************/
 
-		/***************** READ ADC ****************/
+			if ((++poll_user_input>USER_INPUT_POLL_TIME) && (ADCSRA & (1<<ADIF))){
+			
+				poll_user_input=0;
 
-		if ((++poll_user_input>USER_INPUT_POLL_TIME) && (ADCSRA & (1<<ADIF))){
-		
-			poll_user_input=0;
+				ADCSRA |= (1<<ADIF);		// Clear the flag by sending a logical "1"
+				adch=ADCH;
 
-			ADCSRA |= (1<<ADIF);		// Clear the flag by sending a logical "1"
-			adch=ADCH;
-
-			next_adc=cur_adc+1;
-			if (next_adc >= 8){
-				next_adc=0;	
-			}
-
-			ADMUX = (1<<ADLAR) | next_adc;	//Setup for next conversion
-			ADCSRA |= (1<<ADSC);			//Start Conversion
-
-			if (cur_adc<4){ //Div/Mult
-
-				if (divmult_adc[cur_adc] > adch) 
-					t = divmult_adc[cur_adc] - adch;
-				else 
-					t = adch - divmult_adc[cur_adc];
-
-				if (t >= DIV_ADC_DRIFT){
-					divmult_adc[cur_adc] = adch;
-					old_clock_divide_amount[cur_adc] = clock_divide_amount[cur_adc];
-
-					clock_divide_amount[cur_adc] = get_clk_div_nominal(divmult_adc[cur_adc]);
-					divclk_time[cur_adc]=get_clk_div_time(clock_divide_amount[cur_adc],ping_time[cur_adc]);
-					//if (!output_is_high)
-						pw_time[cur_adc]=calc_pw(pw_adc[cur_adc],divclk_time[cur_adc]);
-
-					if (clock_divide_amount[cur_adc]==-16 && old_clock_divide_amount[cur_adc]!=-16)
-						reset_offset_time[cur_adc]=0;
+				next_adc=cur_adc+1;
+				if (next_adc >= 8){
+					next_adc=0;	
 				}
 
-			} else { //PW
-				i=cur_adc-4;
+				ADMUX = (1<<ADLAR) | next_adc;	//Setup for next conversion
+				ADCSRA |= (1<<ADSC);			//Start Conversion
 
-				if (pw_adc[i]>adch) t=pw_adc[i]-adch;
-				else t=adch-pw_adc[i];
+				if (cur_adc<4){ //Div/Mult
 
-				if (t>PW_ADC_DRIFT){
-					pw_adc[i]=adch;
+					if (divmult_adc[cur_adc] > adch) 
+						t = divmult_adc[cur_adc] - adch;
+					else 
+						t = adch - divmult_adc[cur_adc];
 
-					pw_time[i]=calc_pw(pw_adc[i],divclk_time[i]);
+					if (t >= DIV_ADC_DRIFT){
+						divmult_adc[cur_adc] = adch;
+						old_clock_divide_amount[cur_adc] = clock_divide_amount[cur_adc];
+
+						clock_divide_amount[cur_adc] = get_clk_div_nominal(divmult_adc[cur_adc]);
+						divclk_time[cur_adc]=get_clk_div_time(clock_divide_amount[cur_adc],ping_time[cur_adc]);
+						//if (!output_is_high)
+							pw_time[cur_adc]=calc_pw(pw_adc[cur_adc],divclk_time[cur_adc]);
+
+						if (clock_divide_amount[cur_adc]==-16 && old_clock_divide_amount[cur_adc]!=-16)
+							reset_offset_time[cur_adc]=0;
+					}
+
+				} else { //PW
+					i=cur_adc-4;
+
+					if (pw_adc[i]>adch) t=pw_adc[i]-adch;
+					else t=adch-pw_adc[i];
+
+					if (t>PW_ADC_DRIFT){
+						pw_adc[i]=adch;
+
+						pw_time[i]=calc_pw(pw_adc[i],divclk_time[i]);
+					}
+					
 				}
-				
+
+				cur_adc=next_adc;	
+
 			}
-
-			cur_adc=next_adc;	
-
 		}
 
 	} //main loop

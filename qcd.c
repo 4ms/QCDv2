@@ -2,7 +2,7 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-//#define DEBUG
+#define DEBUG
 
 /********************
  * GLOBAL VARIABLES *
@@ -12,7 +12,7 @@
 #define MIN_PW 10000
 #define DIV_ADC_DRIFT 2
 #define PW_ADC_DRIFT 3
-#define USER_INPUT_POLL_TIME 100
+#define USER_INPUT_POLL_TIME 25
 
 
 /********************
@@ -71,6 +71,7 @@
 #define PING_pins 0b00001111
 #define PING_init DDRD &= ~(PING_pins); PORTD &= ~(PING_pins)
 #define PING(x) (PIND & (1<<(x)))
+#define PING_ALL (PIND & PING_pins)
 
 #define CLKOUT_pins 0b00001111
 #define CLKOUT_init DDRB |= CLKOUT_pins
@@ -139,20 +140,29 @@ SIGNAL (TIMER0_OVF_vect){
 }
 
 uint8_t ping_state=0;
+volatile uint8_t got_ping;
 
 SIGNAL (PCINT2_vect){
+		DEBUGON;
 	uint8_t i;
 
 	for (i=0;i<4;i++){
 		if (PING(i)){
 			if (!(ping_state & (1<<i))){ 	//if jack is read high and it was remembered as being low
 				ping_state |= (1<<i);  	//remember it as being high
-				ping_irq_timestamp[i] = (tmr_ping[i] << 0) ;
+				ping_irq_timestamp[i] = (tmr_ping[i] << 8) | TCNT0 ;
 				tmr_ping[i]=0;
+				got_ping|=1<<i;
 			}
 		} else 
 			ping_state &= ~(1<<i);		//remember it as being low
 	}
+
+	//if  (ping_irq_timestamp[0]==ping_irq_timestamp[1])
+	//	DEBUGON;
+	//else
+		DEBUGOFF;
+
 /*
 	if (PING(0)){
 		ping_irq_timestamp[0] = (tmr_ping[0] << 8) | TCNT0;
@@ -185,14 +195,14 @@ void init_extinterrupt(void){
 uint32_t get_tapintmr(void){
 	uint32_t result;
 	cli();
-	result = (tapintmr << 0) ;
+	result = (tapintmr << 8) | TCNT0;
 	sei();
 	return result;
 }
 uint32_t get_tapouttmr(void){
 	uint32_t result;
 	cli();
-	result = (tapouttmr << 0) ;
+	result = (tapouttmr << 8) | TCNT0;
 	sei();
 	return result;
 }
@@ -211,21 +221,21 @@ void reset_tapintmr(void){
 inline uint32_t get_tmr_clkout(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_clkout[chan] << 0) ;
+	result = (tmr_clkout[chan] << 8) | TCNT0;
 	sei();
 	return result;
 }
 inline uint32_t get_tmr_ping(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_ping[chan] << 0) ;
+	result = (tmr_ping[chan] << 8) | TCNT0;
 	sei();
 	return result;
 }
 inline uint32_t get_tmr_reset(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_reset[chan] << 0) ;
+	result = (tmr_reset[chan] << 8) | TCNT0;
 	sei();
 	return result;
 }
@@ -459,7 +469,7 @@ int main(void){
 	uint8_t next_adc=0;
 
 	uint8_t ping_updated[4]={0,0,0,0};
-
+	uint8_t pings, got_pings;
 
 	/** Initialize **/
 
@@ -481,22 +491,22 @@ int main(void){
 	/** Main loop **/
 	while(1){
 
-		//if (enable_clkout){ //every 125us * 4 = 500us
-		//	clkout_update_ctr=0;
-		//	enable_clkout=0;
-		//	CLKOUT_SETSTATE(clkout_state);
-		//}	
 
 		/************ PING **********/
 
 		//cli();
-		if (PING(0) && ping_irq_timestamp[0]){
-			ping_time[0]=ping_irq_timestamp[0];
-			ping_irq_timestamp[0]=0;
+		//pings=PING_ALL;
+		pings=0xFF;
+		got_pings=got_ping;
+
+		if ((pings&1) && (got_pings&1)){
 			cli();
+				ping_time[0]=ping_irq_timestamp[0];
+				got_pings&=~(1<<0);
+				ping_irq_timestamp[0]=0;
 				tmr_reset[0]=0;
 			sei();
-			ping_updated[0]=1;
+			//ping_updated[0]=1;
 			clock_divide_amount[0] = get_clk_div_nominal( divmult_adc[0] );
 
 			divclk_time[0] = get_clk_div_time( clock_divide_amount[0] , ping_time[0] );
@@ -533,13 +543,16 @@ int main(void){
 				num_pings_since_reset[0][18]=0;
 			}
 		}
-		if (PING(1) && ping_irq_timestamp[1]){
-			ping_time[1]=ping_irq_timestamp[1];
-			ping_irq_timestamp[1]=0;
+
+		if ((pings & 0b10) && (got_pings & 0b10)){
 			cli();
+				ping_time[1]=ping_irq_timestamp[1];
+				got_pings&=~(1<<1);
+				ping_irq_timestamp[1]=0;
 				tmr_reset[1]=0;
 			sei();
-			ping_updated[1]=1;
+			//ping_updated[0]=1;
+
 			clock_divide_amount[1] = get_clk_div_nominal( divmult_adc[1] );
 
 			divclk_time[1] = get_clk_div_time( clock_divide_amount[1] , ping_time[1] );
@@ -576,13 +589,16 @@ int main(void){
 				num_pings_since_reset[1][18]=0;
 			}
 		}
-		if (PING(2) && ping_irq_timestamp[2]){
-			ping_time[2]=ping_irq_timestamp[2];
-			ping_irq_timestamp[2]=0;
+
+		if ((pings & 0b100) && (got_pings & 0b100)){
 			cli();
+				ping_time[2]=ping_irq_timestamp[2];
+				got_pings&=~(1<<2);
+				ping_irq_timestamp[2]=0;
 				tmr_reset[2]=0;
 			sei();
-			ping_updated[2]=1;
+			//ping_updated[2]=1;
+
 			clock_divide_amount[2] = get_clk_div_nominal( divmult_adc[2] );
 
 			divclk_time[2] = get_clk_div_time( clock_divide_amount[2] , ping_time[2] );
@@ -619,13 +635,16 @@ int main(void){
 				num_pings_since_reset[2][18]=0;
 			}
 		}
-		if (PING(3) && ping_irq_timestamp[3]){
-			ping_time[3]=ping_irq_timestamp[3];
-			ping_irq_timestamp[3]=0;
+
+		if ((pings & 0b1000) && (got_pings & 0b1000)){
 			cli();
+				ping_time[3]=ping_irq_timestamp[3];
+				got_pings&=~(1<<3);
+				ping_irq_timestamp[3]=0;
 				tmr_reset[3]=0;
 			sei();
-			ping_updated[3]=1;
+			//ping_updated[3]=1;
+
 			clock_divide_amount[3] = get_clk_div_nominal( divmult_adc[3] );
 
 			divclk_time[3] = get_clk_div_time( clock_divide_amount[3] , ping_time[3] );
@@ -752,7 +771,6 @@ int main(void){
 
 		/******************* CLK OUT *****************16us */
 		//cli();
-		//DEBUGON;	
 
 		if (divclk_time[0]){
 			if (reset_now_flag[0]){
@@ -762,7 +780,7 @@ int main(void){
 				sei();
 				CLKOUT_ON(0);
 			}
-			now = (tmr_clkout[0] << 0) ;
+			now = get_tmr_clkout(0);
 			if (now>=pw_time[0]){
 				CLKOUT_OFF(0);
 			}
@@ -785,7 +803,7 @@ int main(void){
 				sei();
 				CLKOUT_ON(1);
 			}
-			now = (tmr_clkout[1] << 0) ;
+			now = get_tmr_clkout(1);
 			if (now>=pw_time[1]){
 				CLKOUT_OFF(1);
 			}
@@ -809,7 +827,7 @@ int main(void){
 				sei();
 				CLKOUT_ON(2);
 			}
-			now = (tmr_clkout[2] << 0) ;
+			now = get_tmr_clkout(2);
 			if (now>=pw_time[2]){
 				CLKOUT_OFF(2);
 			}
@@ -833,7 +851,7 @@ int main(void){
 				sei();
 				CLKOUT_ON(3);
 			}
-			now = (tmr_clkout[3] << 0) ;
+			now = get_tmr_clkout(3);
 			if (now>=pw_time[3]){
 				CLKOUT_OFF(3);
 			}
@@ -850,7 +868,6 @@ int main(void){
 		}
 		//sei();
 
-		//DEBUGOFF;
 
 		CLKOUT_SETSTATE(clkout_state);
 

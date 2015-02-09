@@ -266,6 +266,45 @@ void init_adc(void){
 int8_t get_clk_div_nominal(uint8_t adc_val){
 	if (adc_val<=5) 	// /32
 		return(P_1);
+	else if (adc_val<=16) // /16
+		return(P_2);
+	else if (adc_val<=31) // /8
+		return(P_3);
+	else if (adc_val<=45) // /7
+		return(P_4);
+	else if (adc_val<=59) // /6
+		return(P_5);
+	else if (adc_val<=72) // /5
+		return(P_6);
+	else if (adc_val<=86) // /4
+		return(P_7);
+	else if (adc_val<=99) // /3
+		return(P_8);
+	else if (adc_val<=112) // /2
+		return(P_9);
+	else if (adc_val<=125) // =1
+		return(P_10);
+	else if (adc_val<=137) // x2
+		return(P_11);	
+	else if (adc_val<=151) // x3
+		return(P_12);	
+	else if (adc_val<=164) // x4
+		return(P_13);
+	else if (adc_val<=177) // x5
+		return(P_14);
+	else if (adc_val<=191) // x6
+		return(P_15);
+	else if (adc_val<=205) // x7
+		return(P_16);
+	else if (adc_val<=218) // x8
+		return(P_17);
+	else if (adc_val<=235) // x12
+		return(P_18);
+	else  			// x16
+		return(P_19);
+/*
+	if (adc_val<=5) 	// /32
+		return(P_1);
 	else if (adc_val<=17) // /16
 		return(P_2);
 	else if (adc_val<=33) // /8
@@ -302,6 +341,7 @@ int8_t get_clk_div_nominal(uint8_t adc_val){
 		return(P_18);
 	else  			// x16
 		return(P_19);
+*/
 
 }
 uint32_t get_clk_div_time(int8_t clock_divide_amount, uint32_t clk_time){

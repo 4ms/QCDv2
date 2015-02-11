@@ -8,8 +8,9 @@
  * GLOBAL VARIABLES *
  ********************/
 
-#define HOLDTIMECLEAR 800000
-#define MIN_PW 10000
+#define HOLDTIMECLEAR 16000
+#define MIN_PW 40
+#define SLOW_PERIOD 240
 #define DIV_ADC_DRIFT 2
 #define PW_ADC_DRIFT 3
 #define USER_INPUT_POLL_TIME 25
@@ -121,6 +122,8 @@ uint8_t clkout_update_ctr=0;
 uint8_t enable_clkout=0;
 
 SIGNAL (TIMER0_OVF_vect){
+//DEBUGON;
+cli();
 	tapintmr++;
 	tapouttmr++;
 
@@ -136,51 +139,31 @@ SIGNAL (TIMER0_OVF_vect){
 	tmr_clkout[1]++;
 	tmr_clkout[2]++;
 	tmr_clkout[3]++;
-
+sei();
+//DEBUGOFF;
 }
 
-uint8_t ping_state=0;
-volatile uint8_t got_ping;
+uint8_t ping_state[4]={0,0,0,0};
+volatile uint8_t got_ping[4]={0,0,0,0};
 
 SIGNAL (PCINT2_vect){
-		DEBUGON;
-	uint8_t i;
 
+	uint8_t i;
+	//uint8_t tcnt0=TCNT0;
+	
 	for (i=0;i<4;i++){
 		if (PING(i)){
-			if (!(ping_state & (1<<i))){ 	//if jack is read high and it was remembered as being low
-				ping_state |= (1<<i);  	//remember it as being high
-				ping_irq_timestamp[i] = (tmr_ping[i] << 8) | TCNT0 ;
+			if (!(ping_state[i])){ 	//if jack is read high and it was remembered as being low
+				ping_state[i]=1;  	//remember it as being high
+				ping_irq_timestamp[i] = tmr_ping[i];
+				//ping_irq_timestamp[i] = (tmr_ping[i] << 8) | tcnt0 ;
 				tmr_ping[i]=0;
-				got_ping|=1<<i;
+				got_ping[i]=1;
 			}
 		} else 
-			ping_state &= ~(1<<i);		//remember it as being low
+			ping_state[i]=0;		//remember it as being low
 	}
 
-	//if  (ping_irq_timestamp[0]==ping_irq_timestamp[1])
-	//	DEBUGON;
-	//else
-		DEBUGOFF;
-
-/*
-	if (PING(0)){
-		ping_irq_timestamp[0] = (tmr_ping[0] << 8) | TCNT0;
-		tmr_ping[0]=0;
-	}
-	if (PING(1)){
-		ping_irq_timestamp[1] = (tmr_ping[1] << 8) | TCNT0;
-		tmr_ping[1]=0;
-	}
-	if (PING(2)){
-		ping_irq_timestamp[2] = (tmr_ping[2] << 8) | TCNT0;
-		tmr_ping[2]=0;
-	}
-	if (PING(3)){
-		ping_irq_timestamp[3] = (tmr_ping[3] << 8) | TCNT0;
-		tmr_ping[3]=0;
-	}
-*/
 }
 
 void init_extinterrupt(void){
@@ -195,14 +178,16 @@ void init_extinterrupt(void){
 uint32_t get_tapintmr(void){
 	uint32_t result;
 	cli();
-	result = (tapintmr << 8) | TCNT0;
+	//result = (tapintmr << 8) | TCNT0;
+	result = tapintmr;
 	sei();
 	return result;
 }
 uint32_t get_tapouttmr(void){
 	uint32_t result;
 	cli();
-	result = (tapouttmr << 8) | TCNT0;
+	//result = (tapouttmr << 8) | TCNT0;
+	result = tapouttmr;
 	sei();
 	return result;
 }
@@ -221,21 +206,23 @@ void reset_tapintmr(void){
 inline uint32_t get_tmr_clkout(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_clkout[chan] << 8) | TCNT0;
+	result = tmr_clkout[chan];
+	//result = (tmr_clkout[chan] << 8) | TCNT0;
 	sei();
 	return result;
 }
 inline uint32_t get_tmr_ping(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_ping[chan] << 8) | TCNT0;
+	result = tmr_ping[chan];
 	sei();
 	return result;
 }
 inline uint32_t get_tmr_reset(uint8_t chan){
 	uint32_t result;
 	cli();
-	result = (tmr_reset[chan] << 8) | TCNT0;
+	result = tmr_reset[chan];
+	//result = (tmr_reset[chan] << 8) | TCNT0;
 	sei();
 	return result;
 }
@@ -243,13 +230,7 @@ inline uint32_t get_tmr_reset(uint8_t chan){
 
 void inittimer(void){
 	cli();
-	//Normal mode, TOP at 0xFF, OC0A and OC0B disconnected, Prescale @ FCK/8
-	TCCR0A=(0<<WGM01) | (0<<WGM00) ;
-	TCCR0B= (0<<WGM02) | (0<<CS00) | (1<<CS01) | (0<<CS02);
 
-	TCNT0=0;
-
-	TIMSK0 |= (1<<TOIE0); 
 	tapouttmr=0;
 	tapintmr=0;
 	tmr_clkout[0]=0;
@@ -264,6 +245,14 @@ void inittimer(void){
 	tmr_reset[1]=0;
 	tmr_reset[2]=0;
 	tmr_reset[3]=0;
+
+	//Normal mode, TOP at 0xFF, OC0A and OC0B disconnected, Prescale @ FCK/8
+	TCCR0A=(0<<WGM01) | (0<<WGM00) ;
+	TCCR0B= (0<<WGM02) | (0<<CS00) | (1<<CS01) | (0<<CS02);
+
+	TCNT0=0;
+
+	TIMSK0 |= (1<<TOIE0); 
 						// Enable timer overflow interrupt
 	sei();
 }
@@ -359,7 +348,7 @@ uint32_t get_clk_div_time(int8_t clock_divide_amount, uint32_t clk_time){
 	else if (clock_divide_amount==-8) // *8
 		return(clk_time>>3);
 	else if (clock_divide_amount==-16) // *16
-		return((clk_time>>4) + 100);
+		return((clk_time>>4)+1);
 		
 	else if (clock_divide_amount<0)
 		return(clk_time/(-1*clock_divide_amount));
@@ -404,7 +393,7 @@ uint32_t calc_pw(uint8_t pw_adc, uint32_t period){
 	else if (pw_adc<250) t=((period>>1)+(period>>2)+(period>>3)+(period>>4)); //93.75%
 	else t=period-(period>>5); //96.875%
 
-	if (period>(30000)){   //period is at least 30ms (lower than 33Hz) so we should use MIN_PW as a min/max
+	if (period>(SLOW_PERIOD)){   //period is at least 30ms (lower than 33Hz) so we should use MIN_PW as a min/max
 		if (pw_adc<4 || t<MIN_PW) t=MIN_PW;
 		if (pw_adc>=250 || t>(period-MIN_PW)) t=period-MIN_PW; 
 
@@ -423,6 +412,9 @@ uint32_t calc_pw(uint8_t pw_adc, uint32_t period){
 int main(void){
 
 	uint32_t now=0;
+	uint32_t nows[4]={0,0,0,0};
+	uint32_t resets[4]={0,0,0,0};
+
 	uint32_t t=0;
 
 	uint32_t tapout_clk_time=0;
@@ -447,6 +439,8 @@ int main(void){
 		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
 		{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
 	};
+	int8_t num_divclks_since_ping[4]={0,0,0,0};
+
 	uint8_t cda[4][19] = {
 		{P_19,P_18,P_17,P_16,P_15,P_14,P_13,P_12,P_11,P_10,P_9,P_8,P_7,P_6,P_5,P_4,P_3,P_2,P_1},
 		{P_19,P_18,P_17,P_16,P_15,P_14,P_13,P_12,P_11,P_10,P_9,P_8,P_7,P_6,P_5,P_4,P_3,P_2,P_1},
@@ -455,11 +449,11 @@ int main(void){
 	};
 	
 
-	uint8_t i;
+	uint8_t i,j;
 	uint8_t cur_chan=0;
 
 	uint8_t adch=127;
-	uint8_t divmult_adc[4]={80,127,127,127};
+	uint8_t divmult_adc[4]={127,127,127,127};
 	uint8_t pw_adc[4]={127,127,127,127};
 
 	int8_t clock_divide_amount[4]={1,1,1,1};
@@ -468,8 +462,9 @@ int main(void){
 	uint8_t cur_adc=0;
 	uint8_t next_adc=0;
 
-	uint8_t ping_updated[4]={0,0,0,0};
-	uint8_t pings, got_pings;
+	uint8_t reset_ck[4];
+
+	uint8_t got_pings[4];
 
 	/** Initialize **/
 
@@ -494,242 +489,74 @@ int main(void){
 
 		/************ PING **********/
 
-		//cli();
-		//pings=PING_ALL;
-		pings=0xFF;
-		got_pings=got_ping;
+		cli();
+		got_pings[0]=got_ping[0];
+		got_pings[1]=got_ping[1];
+		got_pings[2]=got_ping[2];
+		got_pings[3]=got_ping[3];
+		sei();
 
-		if ((pings&1) && (got_pings&1)){
-			cli();
-				ping_time[0]=ping_irq_timestamp[0];
-				got_pings&=~(1<<0);
-				ping_irq_timestamp[0]=0;
-				tmr_reset[0]=0;
-			sei();
-			//ping_updated[0]=1;
-			clock_divide_amount[0] = get_clk_div_nominal( divmult_adc[0] );
+		for (i=0;i<4;i++){
+			if (got_pings[i]){
+				cli();
+					ping_time[i]=ping_irq_timestamp[i];
+					got_ping[i]=0;
+					ping_irq_timestamp[i]=0;
+					tmr_reset[i]=0;
+				sei();
 
-			divclk_time[0] = get_clk_div_time( clock_divide_amount[0] , ping_time[0] );
+				clock_divide_amount[i] = get_clk_div_nominal( divmult_adc[i] );
+				divclk_time[i] = get_clk_div_time( clock_divide_amount[i] , ping_time[i] );
+				pw_time[i] = calc_pw( pw_adc[i] , divclk_time[i] );
 
-			pw_time[0] = calc_pw( pw_adc[0] , divclk_time[0] );
+				num_divclks_since_ping[i]=0;
 
-			if (clock_divide_amount[0]<=1){ 	//multiplying 
-				ready_to_reset[0]=1;
-			}
-
-			for (i=0;i<19;i++){
-				num_pings_since_reset[0][i]++;
-				if ( num_pings_since_reset[0][i] >= cda[0][i] ){
-					if ( clock_divide_amount[0] == cda[0][i] ) 
-						ready_to_reset[0] = 1;
-					num_pings_since_reset[0][i] = 0;
+				if (clock_divide_amount[i]<=1){ 	//multiplying 
+					ready_to_reset[i]=1;
+					if (reset_offset_time[i]==0){ //if we're not using reset, we can reduce jitter by immediately resetting the timer on the ping
+						cli();tmr_clkout[i]=0;sei();
+					}
 				}
-			}
 
-		} else { //(ping_irq_timestamp)
-			if (!FREERUN && (get_tmr_reset(0) > (ping_time[0]<<1))) {
-				//incoming clock has stopped
-				divclk_time[0]=0;
-				reset_offset_time[0]=0;
-				num_pings_since_reset[0][0]=0;num_pings_since_reset[0][1]=0;
-				num_pings_since_reset[0][2]=0;num_pings_since_reset[0][3]=0;
-				num_pings_since_reset[0][4]=0;num_pings_since_reset[0][5]=0;
-				num_pings_since_reset[0][6]=0;num_pings_since_reset[0][7]=0;
-				num_pings_since_reset[0][8]=0;num_pings_since_reset[0][9]=0;
-				num_pings_since_reset[0][10]=0;num_pings_since_reset[0][11]=0;
-				num_pings_since_reset[0][12]=0;num_pings_since_reset[0][13]=0;
-				num_pings_since_reset[0][14]=0;num_pings_since_reset[0][15]=0;
-				num_pings_since_reset[0][16]=0;num_pings_since_reset[0][17]=0;
-				num_pings_since_reset[0][18]=0;
+				//could add a conditional to only do this block if clock_divide_amount[i]>1 ?
+				for (j=0;j<19;j++){
+					num_pings_since_reset[i][j]++;
+					if ( num_pings_since_reset[i][j] >= cda[i][j] ){
+						if ( clock_divide_amount[i] == cda[i][j] ) {
+							ready_to_reset[i] = 1;
+							if (reset_offset_time[i]==0){
+								cli();tmr_clkout[i]=0;sei();
+							}
+						}
+						num_pings_since_reset[i][j] = 0;
+					}
+				}
+
+			} else { //(ping_irq_timestamp)
+				if (!FREERUN && (get_tmr_reset(i) > (ping_time[i]<<1))) {
+					//incoming clock has stopped
+					divclk_time[i]=0;
+					reset_offset_time[i]=0;
+					num_pings_since_reset[i][i]=0;num_pings_since_reset[i][1]=0;
+					num_pings_since_reset[i][2]=0;num_pings_since_reset[i][3]=0;
+					num_pings_since_reset[i][4]=0;num_pings_since_reset[i][5]=0;
+					num_pings_since_reset[i][6]=0;num_pings_since_reset[i][7]=0;
+					num_pings_since_reset[i][8]=0;num_pings_since_reset[i][9]=0;
+					num_pings_since_reset[i][10]=0;num_pings_since_reset[i][11]=0;
+					num_pings_since_reset[i][12]=0;num_pings_since_reset[i][13]=0;
+					num_pings_since_reset[i][14]=0;num_pings_since_reset[i][15]=0;
+					num_pings_since_reset[i][16]=0;num_pings_since_reset[i][17]=0;
+					num_pings_since_reset[i][18]=0;
+				}
 			}
 		}
 
-		if ((pings & 0b10) && (got_pings & 0b10)){
-			cli();
-				ping_time[1]=ping_irq_timestamp[1];
-				got_pings&=~(1<<1);
-				ping_irq_timestamp[1]=0;
-				tmr_reset[1]=0;
-			sei();
-			//ping_updated[0]=1;
-
-			clock_divide_amount[1] = get_clk_div_nominal( divmult_adc[1] );
-
-			divclk_time[1] = get_clk_div_time( clock_divide_amount[1] , ping_time[1] );
-
-			pw_time[1] = calc_pw( pw_adc[1] , divclk_time[1] );
-
-			if (clock_divide_amount[1]<=1){ 	//multiplying 
-				ready_to_reset[1]=1;
-			}
-
-			for (i=0;i<19;i++){
-				num_pings_since_reset[1][i]++;
-				if ( num_pings_since_reset[1][i] >= cda[1][i] ){
-					if ( clock_divide_amount[1] == cda[1][i] ) 
-						ready_to_reset[1] = 1;
-					num_pings_since_reset[1][i] = 0;
-				}
-			}
-
-		} else { //(ping_irq_timestamp)
-			if (!FREERUN && (get_tmr_reset(1) > (ping_time[1]<<1))) {
-				//incoming clock has stopped
-				divclk_time[1]=0;
-				reset_offset_time[1]=0;
-				num_pings_since_reset[1][0]=0;num_pings_since_reset[1][1]=0;
-				num_pings_since_reset[1][2]=0;num_pings_since_reset[1][3]=0;
-				num_pings_since_reset[1][4]=0;num_pings_since_reset[1][5]=0;
-				num_pings_since_reset[1][6]=0;num_pings_since_reset[1][7]=0;
-				num_pings_since_reset[1][8]=0;num_pings_since_reset[1][9]=0;
-				num_pings_since_reset[1][10]=0;num_pings_since_reset[1][11]=0;
-				num_pings_since_reset[1][12]=0;num_pings_since_reset[1][13]=0;
-				num_pings_since_reset[1][14]=0;num_pings_since_reset[1][15]=0;
-				num_pings_since_reset[1][16]=0;num_pings_since_reset[1][17]=0;
-				num_pings_since_reset[1][18]=0;
-			}
-		}
-
-		if ((pings & 0b100) && (got_pings & 0b100)){
-			cli();
-				ping_time[2]=ping_irq_timestamp[2];
-				got_pings&=~(1<<2);
-				ping_irq_timestamp[2]=0;
-				tmr_reset[2]=0;
-			sei();
-			//ping_updated[2]=1;
-
-			clock_divide_amount[2] = get_clk_div_nominal( divmult_adc[2] );
-
-			divclk_time[2] = get_clk_div_time( clock_divide_amount[2] , ping_time[2] );
-
-			pw_time[2] = calc_pw( pw_adc[2] , divclk_time[2] );
-
-			if (clock_divide_amount[2]<=1){ 	//multiplying 
-				ready_to_reset[2]=1;
-			}
-
-			for (i=0;i<19;i++){
-				num_pings_since_reset[2][i]++;
-				if ( num_pings_since_reset[2][i] >= cda[2][i] ){
-					if ( clock_divide_amount[2] == cda[2][i] ) 
-						ready_to_reset[2] = 1;
-					num_pings_since_reset[2][i] = 0;
-				}
-			}
-
-		} else { //(ping_irq_timestamp)
-			if (!FREERUN && (get_tmr_reset(2) > (ping_time[2]<<1))) {
-				//incoming clock has stopped
-				divclk_time[2]=0;
-				reset_offset_time[2]=0;
-				num_pings_since_reset[2][0]=0;num_pings_since_reset[2][1]=0;
-				num_pings_since_reset[2][2]=0;num_pings_since_reset[2][3]=0;
-				num_pings_since_reset[2][4]=0;num_pings_since_reset[2][5]=0;
-				num_pings_since_reset[2][6]=0;num_pings_since_reset[2][7]=0;
-				num_pings_since_reset[2][8]=0;num_pings_since_reset[2][9]=0;
-				num_pings_since_reset[2][10]=0;num_pings_since_reset[2][11]=0;
-				num_pings_since_reset[2][12]=0;num_pings_since_reset[2][13]=0;
-				num_pings_since_reset[2][14]=0;num_pings_since_reset[2][15]=0;
-				num_pings_since_reset[2][16]=0;num_pings_since_reset[2][17]=0;
-				num_pings_since_reset[2][18]=0;
-			}
-		}
-
-		if ((pings & 0b1000) && (got_pings & 0b1000)){
-			cli();
-				ping_time[3]=ping_irq_timestamp[3];
-				got_pings&=~(1<<3);
-				ping_irq_timestamp[3]=0;
-				tmr_reset[3]=0;
-			sei();
-			//ping_updated[3]=1;
-
-			clock_divide_amount[3] = get_clk_div_nominal( divmult_adc[3] );
-
-			divclk_time[3] = get_clk_div_time( clock_divide_amount[3] , ping_time[3] );
-
-			pw_time[3] = calc_pw( pw_adc[3] , divclk_time[3] );
-
-			if (clock_divide_amount[3]<=1){ 	//multiplying 
-				ready_to_reset[3]=1;
-			}
-
-			for (i=0;i<19;i++){
-				num_pings_since_reset[3][i]++;
-				if ( num_pings_since_reset[3][i] >= cda[3][i] ){
-					if ( clock_divide_amount[3] == cda[3][i] ) 
-						ready_to_reset[3] = 1;
-					num_pings_since_reset[3][i] = 0;
-				}
-			}
-
-		} else { //(ping_irq_timestamp)
-			if (!FREERUN && (get_tmr_reset(3) > (ping_time[3]<<1))) {
-				//incoming clock has stopped
-				divclk_time[3]=0;
-				reset_offset_time[3]=0;
-				num_pings_since_reset[3][0]=0;num_pings_since_reset[3][1]=0;
-				num_pings_since_reset[3][2]=0;num_pings_since_reset[3][3]=0;
-				num_pings_since_reset[3][4]=0;num_pings_since_reset[3][5]=0;
-				num_pings_since_reset[3][6]=0;num_pings_since_reset[3][7]=0;
-				num_pings_since_reset[3][8]=0;num_pings_since_reset[3][9]=0;
-				num_pings_since_reset[3][10]=0;num_pings_since_reset[3][11]=0;
-				num_pings_since_reset[3][12]=0;num_pings_since_reset[3][13]=0;
-				num_pings_since_reset[3][14]=0;num_pings_since_reset[3][15]=0;
-				num_pings_since_reset[3][16]=0;num_pings_since_reset[3][17]=0;
-				num_pings_since_reset[3][18]=0;
-			}
-		}
-		//sei();
 
 
 
-		if (++cur_chan>=4) cur_chan=0;
-
-/*
-		if (ping_updated[cur_chan]){
-			ping_updated[cur_chan]=0;
-
-			clock_divide_amount[cur_chan] = get_clk_div_nominal( divmult_adc[cur_chan] );
-
-			divclk_time[cur_chan] = get_clk_div_time( clock_divide_amount[cur_chan] , ping_time[cur_chan] );
-
-			pw_time[cur_chan] = calc_pw( pw_adc[cur_chan] , divclk_time[cur_chan] );
-
-			if (clock_divide_amount[cur_chan]<=1){ 	//multiplying 
-				ready_to_reset[cur_chan]=1;
-			}
-
-			for (i=0;i<19;i++){
-				num_pings_since_reset[cur_chan][i]++;
-				if ( num_pings_since_reset[cur_chan][i] >= cda[cur_chan][i] ){
-					if ( clock_divide_amount[cur_chan] == cda[cur_chan][i] ) 
-						ready_to_reset[cur_chan] = 1;
-					num_pings_since_reset[cur_chan][i] = 0;
-				}
-			}
-
-		} else { //(ping_irq_timestamp)
-			if (!FREERUN && (get_tmr_reset(cur_chan) > (ping_time[cur_chan]<<1))) {
-				//incoming clock has stopped
-				divclk_time[cur_chan]=0;
-				reset_offset_time[cur_chan]=0;
-				num_pings_since_reset[cur_chan][0]=0;num_pings_since_reset[cur_chan][1]=0;
-				num_pings_since_reset[cur_chan][2]=0;num_pings_since_reset[cur_chan][3]=0;
-				num_pings_since_reset[cur_chan][4]=0;num_pings_since_reset[cur_chan][5]=0;
-				num_pings_since_reset[cur_chan][6]=0;num_pings_since_reset[cur_chan][7]=0;
-				num_pings_since_reset[cur_chan][8]=0;num_pings_since_reset[cur_chan][9]=0;
-				num_pings_since_reset[cur_chan][10]=0;num_pings_since_reset[cur_chan][11]=0;
-				num_pings_since_reset[cur_chan][12]=0;num_pings_since_reset[cur_chan][13]=0;
-				num_pings_since_reset[cur_chan][14]=0;num_pings_since_reset[cur_chan][15]=0;
-				num_pings_since_reset[cur_chan][16]=0;num_pings_since_reset[cur_chan][17]=0;
-				num_pings_since_reset[cur_chan][18]=0;
-			}
-		}
-*/
 
 		/***************** RESET *******************/
+
 
 		if (RESET(cur_chan)){
 			if (!reset_up[cur_chan]){
@@ -764,117 +591,71 @@ int main(void){
 			}
 		}
 
-		if (((get_tmr_reset(cur_chan)) >= reset_offset_time[cur_chan]) && ready_to_reset[cur_chan]) {
-			reset_now_flag[cur_chan]=1;
-			ready_to_reset[cur_chan]=0;
-		}
+
 
 		/******************* CLK OUT *****************16us */
-		//cli();
+		cli();
+		
+		nows[0]=tmr_clkout[0];
+		nows[1]=tmr_clkout[1];
+		nows[2]=tmr_clkout[2];
+		nows[3]=tmr_clkout[3];
+		resets[0]=tmr_reset[0];
+		resets[1]=tmr_reset[1];
+		resets[2]=tmr_reset[2];
+		resets[3]=tmr_reset[3];
+		sei();
+	
+		DEBUGOFF;	
+		for (i=0;i<4;i++){
+			reset_ck[i]=0xFF;
+			if (divclk_time[i]){
+				if (nows[i]>=pw_time[i]){
+					CLKOUT_OFF(i);
+				}
 
-		if (divclk_time[0]){
-			if (reset_now_flag[0]){
-				reset_now_flag[0]=0;
-				cli();
-					tmr_clkout[0]=0;
-				sei();
-				CLKOUT_ON(0);
-			}
-			now = get_tmr_clkout(0);
-			if (now>=pw_time[0]){
-				CLKOUT_OFF(0);
-			}
-			if (now>divclk_time[0]){
-				t=(now-divclk_time[0])>>8;
-				cli();
-					tmr_clkout[0]=t;
-				sei();
+/*
+				if ((resets[i] >= reset_offset_time[i]) && ready_to_reset[i]) {
+					reset_now_flag[i]=1;
+					ready_to_reset[i]=0;
+				}
+*/
+				if ((resets[i] >= reset_offset_time[i] && ready_to_reset[i]) || reset_now_flag[i]){
+					reset_now_flag[i]=0;
+					ready_to_reset[i]=0;
+					reset_ck[i]=0;
+					CLKOUT_ON(i);
+					num_divclks_since_ping[i]--;
+				}
 
-				CLKOUT_ON(0);
+				//do this only if we're using reset, or we're multiplying and this isn't the 0 pulse
+				if ((reset_offset_time[i]!=0)|| ((clock_divide_amount[i]<1) && (num_divclks_since_ping[i]>clock_divide_amount[i]))){
+					if (nows[i]>=divclk_time[i]){
+						t=nows[i]-divclk_time[i];
+						reset_ck[i]=(uint8_t)t;
+						CLKOUT_ON(i);
+						num_divclks_since_ping[i]--;
+					}
+				} else {
+					if (i==0) DEBUGON;
+				}
+			} else {
+				CLKOUT_OFF(i);
 			}
-		} else {
-			CLKOUT_OFF(0);
 		}
-		if (divclk_time[1]){
-			if (reset_now_flag[1]){
-				reset_now_flag[1]=0;
-				cli();
-					tmr_clkout[1]=0;
-				sei();
-				CLKOUT_ON(1);
-			}
-			now = get_tmr_clkout(1);
-			if (now>=pw_time[1]){
-				CLKOUT_OFF(1);
-			}
-			if (now>divclk_time[1]){
-				t=(now-divclk_time[1])>>8;
-				cli();
-					tmr_clkout[1]=t;
-				sei();
-
-				CLKOUT_ON(1);
-			}
-		} else {
-			CLKOUT_OFF(1);
-		}
-
-		if (divclk_time[2]){
-			if (reset_now_flag[2]){
-				reset_now_flag[2]=0;
-				cli();
-					tmr_clkout[2]=0;
-				sei();
-				CLKOUT_ON(2);
-			}
-			now = get_tmr_clkout(2);
-			if (now>=pw_time[2]){
-				CLKOUT_OFF(2);
-			}
-			if (now>divclk_time[2]){
-				t=(now-divclk_time[2])>>8;
-				cli();
-					tmr_clkout[2]=t;
-				sei();
-
-				CLKOUT_ON(2);
-			}
-		} else {
-			CLKOUT_OFF(2);
-		}
-
-		if (divclk_time[3]){
-			if (reset_now_flag[3]){
-				reset_now_flag[3]=0;
-				cli();
-					tmr_clkout[3]=0;
-				sei();
-				CLKOUT_ON(3);
-			}
-			now = get_tmr_clkout(3);
-			if (now>=pw_time[3]){
-				CLKOUT_OFF(3);
-			}
-			if (now>divclk_time[3]){
-				t=(now-divclk_time[3])>>8;
-				cli();
-					tmr_clkout[3]=t;
-				sei();
-
-				CLKOUT_ON(3);
-			}
-		} else {
-			CLKOUT_OFF(3);
-		}
-		//sei();
+		cli();
+		if (reset_ck[0]!=0xFF) {tmr_clkout[0]=reset_ck[0];}
+		if (reset_ck[1]!=0xFF) {tmr_clkout[1]=reset_ck[1];}
+		if (reset_ck[2]!=0xFF) {tmr_clkout[2]=reset_ck[2];}
+		if (reset_ck[3]!=0xFF) {tmr_clkout[3]=reset_ck[3];}
+		sei();
 
 
 		CLKOUT_SETSTATE(clkout_state);
 
-	//Only do the global updates after all channels have been processed
-		if (cur_chan==3){
-			//enable_clkout=1;
 
+		if (++cur_chan>=4) cur_chan=0;
+		if (cur_chan==3){
 
 			/************ TAP ************/
 			if (TAPIN){
@@ -915,7 +696,8 @@ int main(void){
 					TAPOUT_OFF;
 				}
 				if (now>tapout_clk_time){
-					t=(now-tapout_clk_time)>>8;
+					t=now-tapout_clk_time;
+					//t=(now-tapout_clk_time)>>8;
 					cli();
 					tapouttmr=t;
 					sei();
@@ -930,6 +712,7 @@ int main(void){
 
 
 			/***************** READ ADC ****************/
+
 
 			if ((++poll_user_input>USER_INPUT_POLL_TIME) && (ADCSRA & (1<<ADIF))){
 			
@@ -983,6 +766,7 @@ int main(void){
 				cur_adc=next_adc;	
 
 			}
+			
 		}
 
 	} //main loop

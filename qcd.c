@@ -2,7 +2,7 @@
 #include <avr/interrupt.h>
 #include <util/delay.h>
 
-#define DEBUG
+//#define DEBUG
 
 /********************
  * GLOBAL VARIABLES *

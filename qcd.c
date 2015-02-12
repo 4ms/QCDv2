@@ -13,7 +13,7 @@
 #define SLOW_PERIOD 240
 #define DIV_ADC_DRIFT 2
 #define PW_ADC_DRIFT 3
-#define USER_INPUT_POLL_TIME 25
+#define USER_INPUT_POLL_TIME 20
 
 
 /********************
@@ -76,8 +76,8 @@
 
 #define CLKOUT_pins 0b00001111
 #define CLKOUT_init DDRB |= CLKOUT_pins
-//#define CLKOUT_ON(x) PORTB |= (1 << (x))
-//#define CLKOUT_OFF(x) PORTB &= ~(1 << (x))
+#define IMMEDIATE_CLKOUT_ON(x) PORTB |= (1 << (x))
+#define IMMEDIATE_CLKOUT_OFF(x) PORTB &= ~(1 << (x))
 
 #define CLKOUT_ON(x) clkout_state |= (1<<(x))
 #define CLKOUT_OFF(x) clkout_state &= ~(1 << (x))
@@ -281,41 +281,41 @@ void init_adc(void){
 }
 
 int8_t get_clk_div_nominal(uint8_t adc_val){
-	if (adc_val<=5) 	// /32
+	if (adc_val<=4) 	// /32
 		return(P_1);
 	else if (adc_val<=16) // /16
 		return(P_2);
-	else if (adc_val<=31) // /8
+	else if (adc_val<=29) // /8
 		return(P_3);
-	else if (adc_val<=45) // /7
+	else if (adc_val<=42) // /7
 		return(P_4);
-	else if (adc_val<=59) // /6
+	else if (adc_val<=55) // /6
 		return(P_5);
-	else if (adc_val<=72) // /5
+	else if (adc_val<=67) // /5
 		return(P_6);
-	else if (adc_val<=86) // /4
+	else if (adc_val<=79) // /4
 		return(P_7);
-	else if (adc_val<=99) // /3
+	else if (adc_val<=90) // /3
 		return(P_8);
-	else if (adc_val<=112) // /2
+	else if (adc_val<=102) // /2
 		return(P_9);
-	else if (adc_val<=125) // =1
+	else if (adc_val<=115) // =1
 		return(P_10);
-	else if (adc_val<=137) // x2
+	else if (adc_val<=127) // x2
 		return(P_11);	
-	else if (adc_val<=151) // x3
+	else if (adc_val<=138) // x3
 		return(P_12);	
-	else if (adc_val<=164) // x4
+	else if (adc_val<=151) // x4
 		return(P_13);
-	else if (adc_val<=177) // x5
+	else if (adc_val<=164) // x5
 		return(P_14);
-	else if (adc_val<=191) // x6
+	else if (adc_val<=177) // x6
 		return(P_15);
-	else if (adc_val<=205) // x7
+	else if (adc_val<=190) // x7
 		return(P_16);
-	else if (adc_val<=218) // x8
+	else if (adc_val<=204) // x8
 		return(P_17);
-	else if (adc_val<=231) // x12
+	else if (adc_val<=216) // x12
 		return(P_18);
 	else  			// x16
 		return(P_19);
@@ -557,37 +557,50 @@ int main(void){
 
 		/***************** RESET *******************/
 
+		cli();
+		resets[0]=tmr_reset[0];
+		resets[1]=tmr_reset[1];
+		resets[2]=tmr_reset[2];
+		resets[3]=tmr_reset[3];
+		sei();
 
-		if (RESET(cur_chan)){
-			if (!reset_up[cur_chan]){
-				CLKOUT_OFF(cur_chan); //goes off for 10uS
-				num_pings_since_reset[cur_chan][0]=0;num_pings_since_reset[cur_chan][1]=0;
-				num_pings_since_reset[cur_chan][2]=0;num_pings_since_reset[cur_chan][3]=0;
-				num_pings_since_reset[cur_chan][4]=0;num_pings_since_reset[cur_chan][5]=0;
-				num_pings_since_reset[cur_chan][6]=0;num_pings_since_reset[cur_chan][7]=0;
-				num_pings_since_reset[cur_chan][8]=0;num_pings_since_reset[cur_chan][9]=0;
-				num_pings_since_reset[cur_chan][10]=0;num_pings_since_reset[cur_chan][11]=0;
-				num_pings_since_reset[cur_chan][12]=0;num_pings_since_reset[cur_chan][13]=0;
-				num_pings_since_reset[cur_chan][14]=0;num_pings_since_reset[cur_chan][15]=0;
-				num_pings_since_reset[cur_chan][16]=0;num_pings_since_reset[cur_chan][17]=0;
-				num_pings_since_reset[cur_chan][18]=0;
-				
-				reset_offset_time[cur_chan]=get_tmr_reset(cur_chan); //time elapsed since last ping
-				reset_now_flag[cur_chan]=1;
-				reset_up[cur_chan]=1;
-				ready_to_reset[cur_chan]=0;
+		for (i=0;i<4;i++){
+			if (RESET(i)){
+				if (!reset_up[i]){
+					IMMEDIATE_CLKOUT_OFF(i); //goes off for 10uS
+					num_pings_since_reset[i][0]=0;num_pings_since_reset[i][1]=0;
+					num_pings_since_reset[i][2]=0;num_pings_since_reset[i][3]=0;
+					num_pings_since_reset[i][4]=0;num_pings_since_reset[i][5]=0;
+					num_pings_since_reset[i][6]=0;num_pings_since_reset[i][7]=0;
+					num_pings_since_reset[i][8]=0;num_pings_since_reset[i][9]=0;
+					num_pings_since_reset[i][10]=0;num_pings_since_reset[i][11]=0;
+					num_pings_since_reset[i][12]=0;num_pings_since_reset[i][13]=0;
+					num_pings_since_reset[i][14]=0;num_pings_since_reset[i][15]=0;
+					num_pings_since_reset[i][16]=0;num_pings_since_reset[i][17]=0;
+					num_pings_since_reset[i][18]=0;
+					
+					reset_offset_time[i]=resets[i]; //time elapsed since last ping
+					reset_now_flag[i]=1;
+					reset_up[i]=1;
+					ready_to_reset[i]=0;
+				}
+			}	else {
+				reset_up[i]=0;
 			}
-		}	else {
-			reset_up[cur_chan]=0;
 		}
 		
-		if (clock_divide_amount[cur_chan] > 1){ //dividing
-			if (reset_offset_time[cur_chan] > divclk_time[cur_chan]) {
-				reset_offset_time[cur_chan] = 0;
-			}
-		} else { //multiplying
-			if (reset_offset_time[cur_chan] > ping_time[cur_chan]) {
-				reset_offset_time[cur_chan] = 0;
+
+		if (++cur_chan>=4) cur_chan=0;
+
+		if (reset_offset_time[cur_chan]>0){
+			if (clock_divide_amount[cur_chan] > 1){ //dividing
+				if (reset_offset_time[cur_chan] > divclk_time[cur_chan]) {
+					reset_offset_time[cur_chan] = 0;
+				}
+			} else { //multiplying
+				if (reset_offset_time[cur_chan] > ping_time[cur_chan]) {
+					reset_offset_time[cur_chan] = 0;
+				}
 			}
 		}
 
@@ -606,7 +619,6 @@ int main(void){
 		resets[3]=tmr_reset[3];
 		sei();
 	
-		DEBUGOFF;	
 		for (i=0;i<4;i++){
 			reset_ck[i]=0xFF;
 			if (divclk_time[i]){
@@ -637,7 +649,7 @@ int main(void){
 						num_divclks_since_ping[i]--;
 					}
 				} else {
-					if (i==0) DEBUGON;
+					//if (i==0) DEBUGON;
 				}
 			} else {
 				CLKOUT_OFF(i);
@@ -654,9 +666,7 @@ int main(void){
 		CLKOUT_SETSTATE(clkout_state);
 
 
-		if (++cur_chan>=4) cur_chan=0;
 		if (cur_chan==3){
-
 			/************ TAP ************/
 			if (TAPIN){
 				tapin_down=0;
@@ -712,9 +722,11 @@ int main(void){
 
 
 			/***************** READ ADC ****************/
+			DEBUGOFF;
 
 
 			if ((++poll_user_input>USER_INPUT_POLL_TIME) && (ADCSRA & (1<<ADIF))){
+				DEBUGON;
 			
 				poll_user_input=0;
 

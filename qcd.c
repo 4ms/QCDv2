@@ -9,11 +9,13 @@
  ********************/
 
 #define HOLDTIMECLEAR 16000
-#define MIN_PW 40
-#define SLOW_PERIOD 240
+//100 is 12ms
+//80 is 10ms
+#define MIN_PW 100
+#define SLOW_PERIOD 160
 #define DIV_ADC_DRIFT 2
 #define PW_ADC_DRIFT 3
-#define USER_INPUT_POLL_TIME 20
+#define USER_INPUT_POLL_TIME 4
 
 
 /********************
@@ -61,8 +63,10 @@
 
 #define TAPOUT_pin PB5
 #define TAPOUT_init DDRB |= (1 << TAPOUT_pin)
-#define TAPOUT_ON PORTB |= (1 << TAPOUT_pin)
-#define TAPOUT_OFF PORTB &= ~(1 << TAPOUT_pin)
+#define TAPOUT_ON clkout_state |= (1<<5)
+//#define TAPOUT_ON PORTB |= (1 << TAPOUT_pin)
+#define TAPOUT_OFF clkout_state &= ~(1<<5)
+//#define TAPOUT_OFF PORTB &= ~(1 << TAPOUT_pin)
 
 
 #define RESET_pins 0b11110000
@@ -83,7 +87,8 @@
 #define CLKOUT_OFF(x) clkout_state &= ~(1 << (x))
 
 #ifndef DEBUG
-	#define CLKOUT_SETSTATE(x) PORTB = (PORTB & 0b11110000) | (x)
+	//#define CLKOUT_SETSTATE(x) PORTB = (PORTB & 0b11110000) | (x)
+	#define CLKOUT_SETSTATE(x) PORTB = (PORTB & 0b11010000) | (x)
 
 	#define DEBUGON
 	#define DEBUGOFF
@@ -315,7 +320,7 @@ int8_t get_clk_div_nominal(uint8_t adc_val){
 		return(P_16);
 	else if (adc_val<=204) // x8
 		return(P_17);
-	else if (adc_val<=216) // x12
+	else if (adc_val<=220) // x12 was 216
 		return(P_18);
 	else  			// x16
 		return(P_19);
@@ -665,8 +670,6 @@ int main(void){
 
 		CLKOUT_SETSTATE(clkout_state);
 
-
-		if (cur_chan==3){
 			/************ TAP ************/
 			if (TAPIN){
 				tapin_down=0;
@@ -720,6 +723,8 @@ int main(void){
 			}
 
 
+
+		if (cur_chan==3){
 
 			/***************** READ ADC ****************/
 			DEBUGOFF;

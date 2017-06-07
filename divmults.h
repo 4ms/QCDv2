@@ -3,6 +3,8 @@
  ********************/
 
 /* 
+Note: This file is not enabled by default.
+
 The Div/Mult pot has 21-detents, but the top and bottom positions are not usable. 
 Therefore we have 19 possible Division or Multiplication values. 
 These are stored as P_1, P_2, through P_19, with P1 being the lowest value (counter-clockwise) and P19 being the greatest value (clockwise). P10 is the center value (typically will be equal to 1, which is "=".
@@ -10,6 +12,7 @@ These are stored as P_1, P_2, through P_19, with P1 being the lowest value (coun
 Negative values represent multiplication (so -6 means x6)
 Positive values represent division (so 4 means /4)
 */
+
 
 #define DIVMULT_FACTORY
 //#define DIVMULT_PRIME

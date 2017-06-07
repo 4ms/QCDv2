@@ -1,0 +1,10 @@
+*.ods
+*.elf
+*.lss
+*.eep
+dep
+dep/
+dep/*
+NUL
+*.map
+*.o

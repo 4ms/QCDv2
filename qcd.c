@@ -675,8 +675,9 @@ int main(void){
 	uint8_t next_adc=0;
 
 	uint8_t reset_ck[4];
-
 	uint8_t got_pings[4];
+
+	uint8_t user_pots_calibrate = 0;	
 
 	/** Initialize **/
 
@@ -738,7 +739,7 @@ int main(void){
 					tmr_reset[i]=0;
 				sei();
 
-				clock_divide_amount[i] = get_clk_div_nominal( divmult_adc[i] );
+				clock_divide_amount[i] = get_clk_div_nominal( i, divmult_adc[i] );
 				divclk_time[i] = get_clk_div_time( clock_divide_amount[i] , ping_time[i] );
 				pw_time[i] = calc_pw( pw_adc[i] , divclk_time[i] );
 
@@ -985,7 +986,7 @@ int main(void){
 						divmult_adc[cur_adc] = adch;
 						old_clock_divide_amount[cur_adc] = clock_divide_amount[cur_adc];
 
-						clock_divide_amount[cur_adc] = get_clk_div_nominal(divmult_adc[cur_adc]);
+						clock_divide_amount[cur_adc] = get_clk_div_nominal(cur_adc, divmult_adc[cur_adc]);
 						divclk_time[cur_adc]=get_clk_div_time(clock_divide_amount[cur_adc],ping_time[cur_adc]);
 						//if (!output_is_high)
 						pw_time[cur_adc]=calc_pw(pw_adc[cur_adc],divclk_time[cur_adc]);

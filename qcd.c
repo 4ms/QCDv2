@@ -1,6 +1,31 @@
+//To Calibrate the Div.Mult knob positions:
+//
+//Power off
+//Set all knobs to 0
+//Hold down the TAP button
+//Power on while continuing to hold down the button
+//Release the button
+//The QCD will be in calibration mode
+//
+//To Calibrate:
+//The first channel that needs to be calibrated will have its light on
+//Turn the knob up one position (note: the botom two positions are the same, so you have to turn it up two positions the first time)
+//The channel light should go off and the TAP button light will go on
+//Tap the TAP button to save the knob position
+//The channel light should go on and the TAP button light will go off
+//
+//Repeat the procedure (turn knob up one position, tap the button, turn knob up, tap the button...)
+//...Until you get to the last position. 
+//Then the light for the next channel will turn on.
+//Continue calibrating the next channel, repeating for each channel
+//When all channels are calibrated, a short light sequence will play.
+//The calibration data is saved into EEPROM.
+//
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#include <avr/eeprom.h>
 
 
 /********************
@@ -13,6 +38,17 @@
 #define PW_ADC_DRIFT 3
 #define USER_INPUT_POLL_TIME 100
 
+
+/*******************
+ *   EEPROM        *
+ *******************/
+
+#define EEPROM_SET 0b10101010
+#define EEPROM_CLEAR 0b00000000
+#define EEPROM_UNPROGRAMMED 0b11111111
+
+#define ISCAL_EEPROMADDR 2
+#define CAL_EEPROMADDR 8
 
 /********************
  *    DIV MULT      *
@@ -38,10 +74,14 @@
 #define P_18 -12
 #define P_19 -16
 
+
+const int8_t P_array[19] = { P_1, P_2, P_3, P_4, P_5, P_6, P_7, P_8, P_9, P_10, P_11, P_12, P_13, P_14, P_15, P_16, P_17, P_18, P_19 };
+
+uint8_t midpt_array[4][19];
+
 /*************
  *  FREE RUN *
  *************/
-
 // Set FREERUN to 1 to allow freerunning clock (output clock doesn't stop when incoming clock stops)
 // Set FREERUN to 0 to disable freerunning clock (output will stop when input stops)
 // Factory default is 0
@@ -211,6 +251,27 @@ uint32_t get_tmr_reset(uint8_t chan){
 	sei();
 	return result;
 }
+void init_adc(void){
+	ADC_DDR &= ~(ADC_mask); //adc input
+	ADC_PORT &= ~(ADC_mask); //disable pullup
+	DIDR0 = ADC_mask; //turn off digital input buffer
+	ADCSRA = (1<<ADEN);	//Enable ADC
+	ADMUX = (1<<ADLAR) | (ADC_DIVMULT1);	//Left-Adjust, MUX to the ADC_pin
+	ADCSRA |= (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0); //prescale = clk/128 = 125kHz
+	ADCSRA |= (1<<ADSC);//set the Start Conversion Flag in the ADC Status Register
+}
+void blink_four() {
+	uint8_t i;
+	CLKOUT_OFF(0);
+	CLKOUT_OFF(1);
+	CLKOUT_OFF(2);
+	CLKOUT_OFF(3);
+	for (i=0; i<8; i++){
+		CLKOUT_ON(i & 0b11);	
+		_delay_ms(90);
+		CLKOUT_OFF(i & 0b11);	
+	}
+}
 
 
 void inittimer(void){
@@ -253,95 +314,44 @@ void init_pins(void){
 #endif
 }
 
-void init_adc(void){
-	ADC_DDR &= ~(ADC_mask); //adc input
-	ADC_PORT &= ~(ADC_mask); //disable pullup
-	DIDR0 = ADC_mask; //turn off digital input buffer
-	ADCSRA = (1<<ADEN);	//Enable ADC
-	ADMUX = (1<<ADLAR) | (ADC_DIVMULT1);	//Left-Adjust, MUX to the ADC_pin
-	ADCSRA |= (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0); //prescale = clk/128 = 125kHz
-	ADCSRA |= (1<<ADSC);//set the Start Conversion Flag in the ADC Status Register
+
+void default_calibration(void)
+{
+	uint8_t i;
+	for (i=0;i<4;i++)
+	{
+		midpt_array[i][0] = 5; //0
+		midpt_array[i][1] = 16; //10
+		midpt_array[i][2] = 31; //23
+		midpt_array[i][3] = 45; //38
+		midpt_array[i][4] = 59; //
+		midpt_array[i][5] = 72;
+		midpt_array[i][6] = 86;
+		midpt_array[i][7] = 99;
+		midpt_array[i][8] = 112;
+		midpt_array[i][9] = 125;
+		midpt_array[i][10] = 137;
+		midpt_array[i][11] = 151;
+		midpt_array[i][12] = 164;
+		midpt_array[i][13] = 177;
+		midpt_array[i][14] = 191; 
+		midpt_array[i][15] = 205; //198
+		midpt_array[i][16] = 218; //211
+		midpt_array[i][17] = 235; //225
+		midpt_array[i][18] = 255; //245
+	}
+
 }
 
-int8_t get_clk_div_nominal(uint8_t adc_val){
-	if (adc_val<=5) 	// /32
-		return(P_1);
-	else if (adc_val<=16) // /16
-		return(P_2);
-	else if (adc_val<=31) // /8
-		return(P_3);
-	else if (adc_val<=45) // /7
-		return(P_4);
-	else if (adc_val<=59) // /6
-		return(P_5);
-	else if (adc_val<=72) // /5
-		return(P_6);
-	else if (adc_val<=86) // /4
-		return(P_7);
-	else if (adc_val<=99) // /3
-		return(P_8);
-	else if (adc_val<=112) // /2
-		return(P_9);
-	else if (adc_val<=125) // =1
-		return(P_10);
-	else if (adc_val<=137) // x2
-		return(P_11);	
-	else if (adc_val<=151) // x3
-		return(P_12);	
-	else if (adc_val<=164) // x4
-		return(P_13);
-	else if (adc_val<=177) // x5
-		return(P_14);
-	else if (adc_val<=191) // x6
-		return(P_15);
-	else if (adc_val<=205) // x7
-		return(P_16);
-	else if (adc_val<=218) // x8
-		return(P_17);
-	else if (adc_val<=235) // x12
-		return(P_18);
-	else  			// x16
-		return(P_19);
-/*
-	if (adc_val<=5) 	// /32
-		return(P_1);
-	else if (adc_val<=17) // /16
-		return(P_2);
-	else if (adc_val<=33) // /8
-		return(P_3);
-	else if (adc_val<=47) // /7
-		return(P_4);
-	else if (adc_val<=62) // /6
-		return(P_5);
-	else if (adc_val<=76) // /5
-		return(P_6);
-	else if (adc_val<=90) // /4
-		return(P_7);
-	else if (adc_val<=104) // /3
-		return(P_8);
-	else if (adc_val<=118) // /2
-		return(P_9);
-	else if (adc_val<=131) // =1
-		return(P_10);
-	else if (adc_val<=144) // x2
-		return(P_11);	
-	else if (adc_val<=158) // x3
-		return(P_12);	
-	else if (adc_val<=172) // x4
-		return(P_13);
-	else if (adc_val<=186) // x5
-		return(P_14);
-	else if (adc_val<=200) // x6
-		return(P_15);
-	else if (adc_val<=215) // x7
-		return(P_16);
-	else if (adc_val<=229) // x8
-		return(P_17);
-	else if (adc_val<=242) // x12
-		return(P_18);
-	else  			// x16
-		return(P_19);
-*/
+
+int8_t get_clk_div_nominal(uint8_t chan, uint8_t adc_val){
+	uint8_t i;
+	for (i=0;i<19;i++)
+	{
+		if (adc_val<=midpt_array[chan][i])
+			return(P_array[i]);
+	}
+	return(P_19);
 
 }
 uint32_t get_clk_div_time(int8_t clock_divide_amount, uint32_t clk_time){
@@ -426,6 +436,163 @@ uint32_t calc_pw(uint8_t pw_adc, uint32_t period){
 
 }
 
+uint8_t adc_read(uint8_t cur_adc) {
+
+	uint8_t adch=127;
+
+	ADMUX = (1<<ADLAR) | cur_adc;	//Setup for next conversion
+	ADCSRA |= (1<<ADSC);			//Start Conversion
+	
+	while (!(ADCSRA & (1<<ADIF))) { ; }
+	
+	ADCSRA |= (1<<ADIF);		// Clear the flag by sending a logical "1"
+
+	adch=ADCH;
+	
+	return adch;	
+}
+
+
+uint8_t calib_mode_start(void) {
+	uint8_t pot_zeroed_bitfield = 0b0000;
+	uint8_t tapCounter = 0;
+	uint8_t i;
+
+
+	for(i=0;i<100;i++) {if (TAPIN) tapCounter++;}
+
+	//_delay_ms(10);
+	//if (TAPIN) tapCounter++;
+	
+
+	for (i=0;i<4;i++){
+		if (adc_read(i) <=8)
+			pot_zeroed_bitfield |= (1<<i);
+	}
+
+	_delay_ms(10);
+
+	//if (TAPIN) tapCounter++;
+	
+	for(i=0;i<100;i++) {if (TAPIN) tapCounter++;}
+
+	if (tapCounter > 150){
+		return(pot_zeroed_bitfield);
+	}
+	else return(0);
+}
+
+void calibrate_pots(uint8_t chan_bitfield){
+	uint16_t stab_delay=30;
+	uint16_t calib_array[19];
+	uint16_t read_tot;
+	uint8_t read_avg;
+	uint8_t read1, read2, read3, read4;
+	uint8_t i,j;
+	uint16_t t;
+	uint8_t diff;
+
+	for ( i = 0; i < 4; i++ ) {
+		if (chan_bitfield & (1<<i))
+		{
+			for ( j = 0; j < 19; j++ ) {
+				CLKOUT_OFF(i); //off = reading pot
+
+				_delay_ms(stab_delay);
+				read1 = adc_read(i);
+				_delay_ms(stab_delay);
+				read2 = adc_read(i);
+				_delay_ms(stab_delay);
+				read3 = adc_read(i);
+				_delay_ms(stab_delay);
+				read4 = adc_read(i);
+
+				read_tot = read1 + read2 + read3 + read4;
+				read_avg = read_tot>>2;	
+				
+				calib_array[j] = read_avg;
+
+				if (j<18){		
+					CLKOUT_ON(i); //on = ready for user to change knob
+
+					if (j==0 || j==17) diff=5;
+					else diff=10;
+
+					_delay_ms(200);
+
+					//wait until knob is detected as being moved
+					do {   
+						_delay_ms(stab_delay);
+						read1 = adc_read(i);
+						_delay_ms(stab_delay);
+						read2 = adc_read(i);
+						_delay_ms(stab_delay);
+						read3 = adc_read(i);
+						_delay_ms(stab_delay);
+						read4 = adc_read(i);
+
+						read_tot = read1 + read2 + read3 + read4;
+						read_avg = read_tot >> 2;	
+					} while ((read_avg - calib_array[j]) < diff);
+
+					TAPOUT_ON;
+					CLKOUT_OFF(i);
+					t = 0;
+					while (t<100) {if (TAPIN) t++; else t=0;}
+					t = 0;
+					while (t<100) {if (!TAPIN) t++; else t=0;}
+					TAPOUT_OFF;
+				} //if j<18
+			} //for j
+
+			//convert the calib_array values to mid-points
+			for(j=0;j<18;j++){
+				midpt_array[i][j] = (calib_array[j] + calib_array[j+1]) >> 1;
+			}
+			midpt_array[i][18] = 255;
+		} //if chan_bitfield
+	} //for i
+}
+
+uint8_t is_calibrated(void)
+{
+	uint8_t t;
+
+	t = eeprom_read_byte((const uint8_t *)(ISCAL_EEPROMADDR));
+	if (t == EEPROM_SET)
+		return(1);
+	else
+		return(0);
+}
+
+void read_calibration(void)
+{
+	eeprom_read_block((void*)&midpt_array, (const void *)(CAL_EEPROMADDR), 4*19);
+
+}
+
+uint8_t sanity_check_calibration(void)
+{
+	uint8_t i,j;
+
+	for ( i = 0; i < 4; i++ ) {
+		for ( j = 0; j < 18; j++ ) {
+			if (midpt_array[i][j+1] <= midpt_array[i][j])
+				return(0); //fail
+		}	
+	}
+	return(1); //pass
+}
+
+void write_calibration(void)
+{
+	eeprom_busy_wait();
+	eeprom_write_block((const void *)&midpt_array, (void *)(CAL_EEPROMADDR), 4*19);
+	eeprom_busy_wait();
+	eeprom_write_byte((uint8_t *)(ISCAL_EEPROMADDR), (uint8_t)EEPROM_SET);
+	eeprom_busy_wait();
+}
+
 /***************************************************
  *             MAIN() FUNCTION                     *
  *                                                 *
@@ -480,6 +647,8 @@ int main(void){
 	uint8_t cur_adc=0;
 	uint8_t next_adc=0;
 
+	uint8_t user_pots_calibrate = 0;
+
 
 	/** Initialize **/
 
@@ -492,6 +661,27 @@ int main(void){
 
 	TAPOUT_OFF;
 
+
+	if (is_calibrated()) //reads calibration bit to see if we're calibrated
+	{
+		read_calibration(); //read from eeprom and store into midpt_array
+		if (!sanity_check_calibration())
+			default_calibration();
+	} else {
+		default_calibration();
+	}	
+
+	user_pots_calibrate = calib_mode_start();
+
+	if (user_pots_calibrate) { 
+		calibrate_pots(user_pots_calibrate);
+		
+		write_calibration();
+		blink_four();
+	}
+
+
+	init_adc();
 
 	CLKOUT_OFF(0);
 	CLKOUT_OFF(1);
@@ -513,7 +703,7 @@ int main(void){
 				tmr_reset[cur_chan]=0;
 			sei();
 
-			clock_divide_amount[cur_chan] = get_clk_div_nominal( divmult_adc[cur_chan] );
+			clock_divide_amount[cur_chan] = get_clk_div_nominal( cur_chan, divmult_adc[cur_chan] );
 
 			divclk_time[cur_chan] = get_clk_div_time( clock_divide_amount[cur_chan] , ping_time[cur_chan] );
 
@@ -703,9 +893,9 @@ int main(void){
 					divmult_adc[cur_adc] = adch;
 					old_clock_divide_amount[cur_adc] = clock_divide_amount[cur_adc];
 
-					clock_divide_amount[cur_adc] = get_clk_div_nominal(divmult_adc[cur_adc]);
+					clock_divide_amount[cur_adc] = get_clk_div_nominal( cur_adc, divmult_adc[cur_adc]);
 					divclk_time[cur_adc]=get_clk_div_time(clock_divide_amount[cur_adc],ping_time[cur_adc]);
-					//if (!output_is_high)
+						//if (!output_is_high)
 						pw_time[cur_adc]=calc_pw(pw_adc[cur_adc],divclk_time[cur_adc]);
 
 					if (clock_divide_amount[cur_adc]==-16 && old_clock_divide_amount[cur_adc]!=-16)
@@ -729,7 +919,6 @@ int main(void){
 			cur_adc=next_adc;	
 
 		}
-
 	} //main loop
 
 } //void main()

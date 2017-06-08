@@ -104,9 +104,10 @@ uint8_t midpt_array[4][19];
 #define TAPOUT_pin PB5
 #define TAPOUT_init DDRB |= (1 << TAPOUT_pin)
 #define TAPOUT_ON clkout_state |= (1<<5)
-//#define TAPOUT_ON PORTB |= (1 << TAPOUT_pin)
 #define TAPOUT_OFF clkout_state &= ~(1<<5)
-//#define TAPOUT_OFF PORTB &= ~(1 << TAPOUT_pin)
+
+#define IMMEDIATE_TAPOUT_ON PORTB |= (1 << TAPOUT_pin)
+#define IMMEDIATE_TAPOUT_OFF PORTB &= ~(1 << TAPOUT_pin)
 
 
 #define RESET_pins 0b11110000
@@ -282,14 +283,14 @@ void init_adc(void){
 }
 void blink_four() {
 	uint8_t i;
-	CLKOUT_OFF(0);
-	CLKOUT_OFF(1);
-	CLKOUT_OFF(2);
-	CLKOUT_OFF(3);
+	IMMEDIATE_CLKOUT_OFF(0);
+	IMMEDIATE_CLKOUT_OFF(1);
+	IMMEDIATE_CLKOUT_OFF(2);
+	IMMEDIATE_CLKOUT_OFF(3);
 	for (i=0; i<8; i++){
-		CLKOUT_ON(i & 0b11);	
+		IMMEDIATE_CLKOUT_ON(i & 0b11);	
 		_delay_ms(90);
-		CLKOUT_OFF(i & 0b11);	
+		IMMEDIATE_CLKOUT_OFF(i & 0b11);	
 	}
 }
 
@@ -518,7 +519,7 @@ void calibrate_pots(uint8_t chan_bitfield){
 		if (chan_bitfield & (1<<i))
 		{
 			for ( j = 0; j < 19; j++ ) {
-				CLKOUT_OFF(i); //off = reading pot
+				IMMEDIATE_CLKOUT_OFF(i); //off = reading pot
 
 				_delay_ms(stab_delay);
 				read1 = adc_read(i);
@@ -535,7 +536,7 @@ void calibrate_pots(uint8_t chan_bitfield){
 				calib_array[j] = read_avg;
 
 				if (j<18){		
-					CLKOUT_ON(i); //on = ready for user to change knob
+					IMMEDIATE_CLKOUT_ON(i); //on = ready for user to change knob
 
 					if (j==0 || j==17) diff=5;
 					else diff=10;
@@ -557,13 +558,13 @@ void calibrate_pots(uint8_t chan_bitfield){
 						read_avg = read_tot >> 2;	
 					} while ((read_avg - calib_array[j]) < diff);
 
-					TAPOUT_ON;
-					CLKOUT_OFF(i);
+					IMMEDIATE_TAPOUT_ON;
+					IMMEDIATE_CLKOUT_OFF(i);
 					t = 0;
 					while (t<100) {if (TAPIN) t++; else t=0;}
 					t = 0;
 					while (t<100) {if (!TAPIN) t++; else t=0;}
-					TAPOUT_OFF;
+					IMMEDIATE_TAPOUT_OFF;
 				} //if j<18
 			} //for j
 
